@@ -86,6 +86,10 @@
     /* ===== APP SHELL ===== */
     #app{display:none;max-width:480px;margin:0 auto;padding-bottom:92px;}
 
+    #syncBadge{
+      position:sticky;top:0;z-index:11;background:var(--yellow-soft);color:var(--yellow-ink);
+      font-size:11.5px;font-weight:700;text-align:center;padding:6px 10px;
+    }
     .topbar{
       display:flex;align-items:center;justify-content:space-between;padding:16px;
       position:sticky;top:0;background:var(--bg);z-index:10;
@@ -281,6 +285,7 @@
   </div>
 
   <div id="app">
+    <div id="syncBadge" style="display:none;"></div>
     <div class="topbar">
       <div class="greet">
         <div class="avatar" id="avatarInisial">?</div>
@@ -455,13 +460,45 @@
     function tryLogin(){
       document.getElementById('pinHint').textContent = '';
       const pinDicoba = currentPin;
+      const cacheKey = 'zm_cache_' + pinDicoba;
+      let dataCache = null;
+      try { dataCache = JSON.parse(localStorage.getItem(cacheKey)); } catch(e) { dataCache = null; }
+
+      // Kalau ada data lama tersimpan buat PIN ini, langsung tampilkan itu dulu
+      // (kelihatan instan), sambil data asli tetap diambil di belakang layar.
+      if (dataCache && dataCache.ok) {
+        tampilkanDashboard(dataCache, pinDicoba, true);
+      }
+
       fetch(GAS_URL + '?action=data&pin=' + encodeURIComponent(pinDicoba))
         .then(function(r){ return r.json(); })
-        .then(function(res){ onLoginResult(res, pinDicoba); })
+        .then(function(res){
+          if (res.ok) { try { localStorage.setItem(cacheKey, JSON.stringify(res)); } catch(e){} }
+          if (dataCache && dataCache.ok) {
+            // Sudah kepampang duluan dari cache - sekarang tinggal update diam-diam
+            loginBusy = false;
+            if (res.ok) { dashboardData = res; render(); hideSyncBadge(); }
+            else { showSyncBadge('⚠️ ' + (res.error || 'Gagal sinkron')); }
+          } else {
+            onLoginResult(res, pinDicoba);
+          }
+        })
         .catch(function(err){
           loginBusy = false;
-          flashPinResult(false, 'Gagal terhubung: ' + err.message);
+          if (dataCache && dataCache.ok) { showSyncBadge('⚠️ Offline, pakai data terakhir'); }
+          else { flashPinResult(false, 'Gagal terhubung: ' + err.message); }
         });
+    }
+
+    function showSyncBadge(msg){
+      let el = document.getElementById('syncBadge');
+      if (!el) return;
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+    function hideSyncBadge(){
+      const el = document.getElementById('syncBadge');
+      if (el) el.style.display = 'none';
     }
 
     function flashPinResult(ok, msg){
@@ -477,19 +514,22 @@
 
     function onLoginResult(res, pinDicoba){
       if (!res.ok) { loginBusy = false; flashPinResult(false, res.error || 'PIN salah.'); return; }
-      loggedInPin = pinDicoba;
       flashPinResult(true, 'Berhasil masuk...');
+      setTimeout(function(){ tampilkanDashboard(res, pinDicoba, false); }, 500);
+    }
+
+    function tampilkanDashboard(res, pinDicoba, dariCache){
+      loggedInPin = pinDicoba;
       dashboardData = res;
-      setTimeout(function(){
-        document.getElementById('pinScreen').style.display = 'none';
-        document.getElementById('app').style.display = 'block';
-        document.getElementById('namaAkunLabel').textContent = res.namaAkun;
-        document.getElementById('avatarInisial').textContent = res.namaAkun.charAt(0).toUpperCase();
-        document.getElementById('profilNama').textContent = res.namaAkun;
-        document.getElementById('profilAvatar').textContent = res.namaAkun.charAt(0).toUpperCase();
-        applyEyeState();
-        render();
-      }, 500);
+      document.getElementById('pinScreen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      document.getElementById('namaAkunLabel').textContent = res.namaAkun;
+      document.getElementById('avatarInisial').textContent = res.namaAkun.charAt(0).toUpperCase();
+      document.getElementById('profilNama').textContent = res.namaAkun;
+      document.getElementById('profilAvatar').textContent = res.namaAkun.charAt(0).toUpperCase();
+      applyEyeState();
+      render();
+      if (dariCache) { showSyncBadge('Menyinkronkan data terbaru...'); }
     }
 
     function refreshData(){
@@ -497,8 +537,10 @@
         .then(function(r){ return r.json(); })
         .then(function(res){
           if (!res.ok) return;
+          try { localStorage.setItem('zm_cache_' + loggedInPin, JSON.stringify(res)); } catch(e){}
           dashboardData = res;
           render();
+          hideSyncBadge();
         })
         .catch(function(){ /* diam-diam gagal, biarin data lama tetap tampil */ });
     }
