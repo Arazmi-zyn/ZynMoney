@@ -256,17 +256,33 @@
     .jt-btn .msym{font-size:16px;}
     .jt-btn[data-jenis="Keluar"].active{background:#FFF1F0;border-color:var(--debit);color:var(--debit);}
     .jt-btn[data-jenis="Masuk"].active{background:#EAFBF3;border-color:var(--kredit);color:var(--kredit);}
-    #tanggalInput{
+    #tanggalInput, #editKategori, #editDeskripsi, #editTanggal{
       width:100%;border:1px solid var(--border);border-radius:12px;padding:11px 12px;
       font-family:'Plus Jakarta Sans',sans-serif;font-size:13.5px;margin-bottom:6px;background:#FAFAFA;color:var(--ink);
     }
     .sheet-hint{font-size:11px;color:var(--ink-faint);margin-bottom:16px;}
-    #kirimBtn{
+    #kirimBtn, #simpanEditBtn{
       width:100%;background:var(--yellow);color:var(--yellow-ink);border:none;border-radius:14px;
       padding:14px;font-size:14px;font-weight:800;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;
     }
-    #kirimBtn:disabled{opacity:0.5;}
-    #statusMsg{font-size:12px;color:var(--ink-soft);margin-top:10px;text-align:center;min-height:16px;}
+    #kirimBtn:disabled, #simpanEditBtn:disabled, #hapusBtn:disabled{opacity:0.5;}
+    #hapusBtn{
+      width:100%;background:#FFF1F0;color:var(--debit);border:1px solid var(--debit);border-radius:14px;
+      padding:13px;font-size:13.5px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;
+      margin-top:10px;
+    }
+    .nominal-wrap{position:relative;margin-bottom:6px;}
+    .nominal-wrap .rp-prefix{
+      position:absolute;left:13px;top:50%;transform:translateY(-50%);
+      font-weight:700;color:var(--ink-soft);font-size:14px;font-family:'''Plus Jakarta Sans''',sans-serif;pointer-events:none;
+    }
+    .nominal-wrap input{
+      width:100%;border:1.5px solid var(--yellow);border-radius:12px;padding:12px 12px 12px 38px;
+      font-family:'''JetBrains Mono''',monospace;font-size:16px;font-weight:700;color:var(--ink);
+      background:var(--yellow-soft);
+    }
+    #editKategori, #editDeskripsi{font-family:'''Plus Jakarta Sans''',sans-serif;font-weight:500;}
+    #statusMsg, #editStatusMsg{font-size:12px;color:var(--ink-soft);margin-top:10px;text-align:center;min-height:16px;}
   </style>
 </head>
 <body>
@@ -405,11 +421,34 @@
     </div>
   </div>
 
+  <div class="sheet-backdrop" id="editSheetBackdrop">
+    <div class="sheet">
+      <div class="sheet-handle"></div>
+      <h3>Edit Transaksi</h3>
+      <label class="sheet-label">Jenis Transaksi</label>
+      <div class="jenis-toggle" id="editJenisToggle">
+        <button type="button" class="jt-btn active" data-jenis="Keluar"><span class="msym">arrow_upward</span>Keluar</button>
+        <button type="button" class="jt-btn" data-jenis="Masuk"><span class="msym">arrow_downward</span>Masuk</button>
+      </div>
+      <label class="sheet-label" style="margin-top:12px;">Nominal</label>
+      <div class="nominal-wrap"><span class="rp-prefix">Rp</span><input type="number" id="editNominal" inputmode="numeric" placeholder="0"></div>
+      <label class="sheet-label" style="margin-top:12px;">Kategori</label>
+      <select id="editKategori"></select>
+      <label class="sheet-label" style="margin-top:12px;">Deskripsi</label>
+      <input type="text" id="editDeskripsi" placeholder="cth: Beli kopi">
+      <label class="sheet-label" style="margin-top:12px;">Tanggal</label>
+      <input type="date" id="editTanggal">
+      <button id="simpanEditBtn" style="margin-top:16px;">Simpan Perubahan</button>
+      <button id="hapusBtn">🗑️ Hapus Transaksi</button>
+      <div id="editStatusMsg"></div>
+    </div>
+  </div>
+
   <script>
     // ============================================================
     // GANTI dengan URL deployment Apps Script kamu (yang diakhiri /exec)
     // ============================================================
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycbyLH8PZFNid6VybIWDBiOV8wkBs9HakeBe9gBdn7xKiwsfZmNN7Ey-TJfc0Yei-Qqsl/exec';
+    const GAS_URL = 'GANTI_DENGAN_URL_DEPLOYMENT_GAS_KAMU';
 
     let currentPin = '';
     let loggedInPin = '';
@@ -577,16 +616,127 @@
     let jenisDipilih = 'Keluar';
     function setJenisAktif(jenis){
       jenisDipilih = jenis;
-      document.querySelectorAll('.jt-btn').forEach(function(b){
+      document.querySelectorAll('#jenisToggle .jt-btn').forEach(function(b){
         b.classList.toggle('active', b.dataset.jenis === jenis);
       });
     }
-    document.querySelectorAll('.jt-btn').forEach(function(btn){
+    document.querySelectorAll('#jenisToggle .jt-btn').forEach(function(btn){
       btn.addEventListener('click', function(){ setJenisAktif(btn.dataset.jenis); });
     });
     document.getElementById('qaGrafik').addEventListener('click', function(){ switchPage('perencanaan'); });
     document.getElementById('qaRiwayat').addEventListener('click', function(){ switchPage('aktivitas'); });
     document.getElementById('lihatSemuaBtn').addEventListener('click', function(){ switchPage('aktivitas'); });
+
+    /* ---------- EDIT & HAPUS TRANSAKSI ---------- */
+    let editJenisDipilih = 'Keluar';
+    let editIsoAktif = null;
+
+    (function isiKategoriSelect(){
+      const sel = document.getElementById('editKategori');
+      Object.keys(KATEGORI_CFG).forEach(function(k){
+        const opt = document.createElement('option'); opt.value = k; opt.textContent = k; sel.appendChild(opt);
+      });
+    })();
+
+    document.querySelectorAll('#editJenisToggle .jt-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        editJenisDipilih = btn.dataset.jenis;
+        document.querySelectorAll('#editJenisToggle .jt-btn').forEach(function(b){
+          b.classList.toggle('active', b.dataset.jenis === editJenisDipilih);
+        });
+      });
+    });
+
+    document.addEventListener('click', function(e){
+      const row = e.target.closest('.act-row');
+      if (row && row.dataset.iso) bukaEditSheet(row.dataset.iso);
+    });
+
+    function bukaEditSheet(iso){
+      const t = (dashboardData.transaksi || []).find(function(x){ return x.tanggalISO === iso; });
+      if (!t) return;
+      editIsoAktif = iso;
+
+      editJenisDipilih = t.jenis;
+      document.querySelectorAll('#editJenisToggle .jt-btn').forEach(function(b){
+        b.classList.toggle('active', b.dataset.jenis === t.jenis);
+      });
+      document.getElementById('editNominal').value = t.nominal;
+      document.getElementById('editKategori').value = t.kategori;
+      document.getElementById('editDeskripsi').value = t.deskripsi || '';
+
+      const d = new Date(iso);
+      const yyyy = d.getFullYear(), mm = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+      document.getElementById('editTanggal').value = yyyy + '-' + mm + '-' + dd;
+      document.getElementById('editTanggal').max = new Date().toISOString().split('T')[0];
+
+      document.getElementById('editStatusMsg').textContent = '';
+      document.getElementById('editSheetBackdrop').classList.add('show');
+    }
+
+    document.getElementById('editSheetBackdrop').addEventListener('click', function(e){
+      if (e.target === this) this.classList.remove('show');
+    });
+
+    document.getElementById('simpanEditBtn').addEventListener('click', function(){
+      if (!editIsoAktif) return;
+      const nominal = document.getElementById('editNominal').value;
+      const kategori = document.getElementById('editKategori').value;
+      const deskripsi = document.getElementById('editDeskripsi').value.trim();
+      const tanggal = document.getElementById('editTanggal').value;
+      if (!nominal || Number(nominal) <= 0) {
+        document.getElementById('editStatusMsg').textContent = '⚠️ Nominal harus diisi.';
+        return;
+      }
+
+      const btn = this;
+      if (btn.disabled) return;
+      btn.disabled = true;
+      document.getElementById('editStatusMsg').textContent = 'Menyimpan...';
+
+      const url = GAS_URL + '?action=edit'
+        + '&pin=' + encodeURIComponent(loggedInPin)
+        + '&tanggalISOLama=' + encodeURIComponent(editIsoAktif)
+        + '&jenis=' + encodeURIComponent(editJenisDipilih)
+        + '&nominal=' + encodeURIComponent(nominal)
+        + '&kategori=' + encodeURIComponent(kategori)
+        + '&deskripsi=' + encodeURIComponent(deskripsi)
+        + '&tanggal=' + encodeURIComponent(tanggal);
+
+      fetch(url)
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+          btn.disabled = false;
+          if (!res.ok) { document.getElementById('editStatusMsg').textContent = '⚠️ ' + res.error; return; }
+          document.getElementById('editStatusMsg').textContent = '✔ Perubahan tersimpan';
+          setTimeout(function(){ document.getElementById('editSheetBackdrop').classList.remove('show'); refreshData(); }, 700);
+        })
+        .catch(function(err){ btn.disabled = false; document.getElementById('editStatusMsg').textContent = '⚠️ Gagal: ' + err.message; });
+    });
+
+    document.getElementById('hapusBtn').addEventListener('click', function(){
+      if (!editIsoAktif) return;
+      if (!confirm('Yakin mau hapus transaksi ini? Nggak bisa dibatalkan.')) return;
+
+      const btn = this;
+      if (btn.disabled) return;
+      btn.disabled = true;
+      document.getElementById('editStatusMsg').textContent = 'Menghapus...';
+
+      const url = GAS_URL + '?action=hapus'
+        + '&pin=' + encodeURIComponent(loggedInPin)
+        + '&tanggalISO=' + encodeURIComponent(editIsoAktif);
+
+      fetch(url)
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+          btn.disabled = false;
+          if (!res.ok) { document.getElementById('editStatusMsg').textContent = '⚠️ ' + res.error; return; }
+          document.getElementById('editStatusMsg').textContent = '✔ Terhapus';
+          setTimeout(function(){ document.getElementById('editSheetBackdrop').classList.remove('show'); refreshData(); }, 700);
+        })
+        .catch(function(err){ btn.disabled = false; document.getElementById('editStatusMsg').textContent = '⚠️ Gagal: ' + err.message; });
+    });
 
     /* ---------- eye toggle ---------- */
     document.getElementById('eyeBtn').addEventListener('click', function(){
@@ -671,7 +821,7 @@
     function activityRowHtml(t){
       const isK = t.jenis === 'Masuk';
       const cfg = katCfg(t.kategori);
-      return '<div class="act-row">' +
+      return '<div class="act-row" data-iso="' + escapeHtml(t.tanggalISO) + '" style="cursor:pointer;">' +
         '<div class="act-left">' +
           '<div class="act-icon" style="background:' + cfg.bg + ';color:' + cfg.fg + '"><span class="msym">' + cfg.icon + '</span></div>' +
           '<div class="act-info"><div class="d">' + escapeHtml(t.deskripsi || t.kategori) + '</div>' +
@@ -765,14 +915,17 @@
       const tanggal = document.getElementById('tanggalInput').value;
       const btn = document.getElementById('kirimBtn');
       const statusEl = document.getElementById('statusMsg');
+      if (btn.disabled) return; // cegah klik ganda / kepencet dobel
       btn.disabled = true;
       statusEl.textContent = 'Mencatat "' + teks + '"...';
 
+      const reqId = 'req_' + Date.now() + '_' + Math.random().toString(36).slice(2);
       const url = GAS_URL + '?action=tambah'
         + '&pin=' + encodeURIComponent(loggedInPin)
         + '&teks=' + encodeURIComponent(teks)
         + '&tanggal=' + encodeURIComponent(tanggal)
-        + '&jenis=' + encodeURIComponent(jenisDipilih);
+        + '&jenis=' + encodeURIComponent(jenisDipilih)
+        + '&reqId=' + encodeURIComponent(reqId);
 
       fetch(url)
         .then(function(r){ return r.json(); })
