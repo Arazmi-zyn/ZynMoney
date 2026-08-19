@@ -411,11 +411,17 @@
         <button type="button" class="jt-btn active" data-jenis="Keluar"><span class="msym">arrow_upward</span>Keluar</button>
         <button type="button" class="jt-btn" data-jenis="Masuk"><span class="msym">arrow_downward</span>Masuk</button>
       </div>
-      <label class="sheet-label" style="margin-top:12px;">Transaksi</label>
-      <textarea id="teksInput" rows="2" placeholder='cth: "beli kopi 25000" atau "gajian bulan ini"'></textarea>
+      <label class="sheet-label" style="margin-top:12px;">Nominal (opsional)</label>
+      <div class="nominal-wrap"><span class="rp-prefix">Rp</span><input type="number" id="tambahNominal" inputmode="numeric" placeholder="Biarkan kosong biar AI yang nebak"></div>
+      <label class="sheet-label" style="margin-top:6px;">Transaksi</label>
+      <textarea id="teksInput" rows="3" placeholder='cth: "beli kopi"
+
+Atau banyak sekaligus, satu baris satu transaksi:
+beli kopi 15000
+beli kue 50000'></textarea>
       <label class="sheet-label">Tanggal transaksi</label>
       <input type="date" id="tanggalInput">
-      <div class="sheet-hint">Tulis bebas, nanti otomatis dibaca AI jadi jenis, nominal, dan kategori. Ganti tanggal kalau mau catat transaksi lama.</div>
+      <div class="sheet-hint">Isi Nominal kalau cuma 1 transaksi &amp; mau angka pasti. Bisa juga tulis BANYAK transaksi sekaligus, satu baris satu transaksi (kolom Nominal &amp; Jenis di atas otomatis diabaikan kalau lebih dari 1 baris). Ganti tanggal kalau mau catat transaksi lama.</div>
       <button id="kirimBtn">Catat Transaksi</button>
       <div id="statusMsg"></div>
     </div>
@@ -446,7 +452,7 @@
 
   <script>
     // ============================================================
-    // GANTI dengan  deployment Apps Script kamu (yang diakhiri /exec)
+    // GANTI dengan URL deployment Apps Script kamu (yang diakhiri /exec)
     // ============================================================
     const GAS_URL = 'https://script.google.com/macros/s/AKfycbyLH8PZFNid6VybIWDBiOV8wkBs9HakeBe9gBdn7xKiwsfZmNN7Ey-TJfc0Yei-Qqsl/exec';
 
@@ -905,14 +911,11 @@
     backdrop.addEventListener('click', function(e){ if (e.target === backdrop) backdrop.classList.remove('show'); });
 
     document.getElementById('kirimBtn').addEventListener('click', kirimTransaksi);
-    document.getElementById('teksInput').addEventListener('keydown', function(e){
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); kirimTransaksi(); }
-    });
-
-    function kirimTransaksi(){
+        function kirimTransaksi(){
       const teks = document.getElementById('teksInput').value.trim();
       if (!teks) return;
       const tanggal = document.getElementById('tanggalInput').value;
+      const nominalManual = document.getElementById('tambahNominal').value;
       const btn = document.getElementById('kirimBtn');
       const statusEl = document.getElementById('statusMsg');
       if (btn.disabled) return; // cegah klik ganda / kepencet dobel
@@ -925,15 +928,21 @@
         + '&teks=' + encodeURIComponent(teks)
         + '&tanggal=' + encodeURIComponent(tanggal)
         + '&jenis=' + encodeURIComponent(jenisDipilih)
-        + '&reqId=' + encodeURIComponent(reqId);
+        + '&reqId=' + encodeURIComponent(reqId)
+        + '&nominalOverride=' + encodeURIComponent(nominalManual);
 
       fetch(url)
         .then(function(r){ return r.json(); })
         .then(function(res){
           btn.disabled = false;
           if (!res.ok) { statusEl.textContent = '⚠️ ' + res.error; return; }
-          statusEl.textContent = '✔ Tercatat: ' + res.data.deskripsi + ' — ' + formatRupiah(res.data.nominal);
+          if (res.batch) {
+            statusEl.textContent = '✔ ' + res.count + ' transaksi tercatat sekaligus!';
+          } else {
+            statusEl.textContent = '✔ Tercatat: ' + res.data.deskripsi + ' — ' + formatRupiah(res.data.nominal);
+          }
           document.getElementById('teksInput').value = '';
+          document.getElementById('tambahNominal').value = '';
           setTimeout(function(){ backdrop.classList.remove('show'); statusEl.textContent = ''; refreshData(); }, 900);
         })
         .catch(function(err){ btn.disabled = false; statusEl.textContent = '⚠️ Gagal: ' + err.message; });
